@@ -16,34 +16,25 @@
  * limitations under the License.
  */
 
-package org.apache.cassandra.streaming.messages;
+package org.apache.cassandra.streaming;
 
 import java.io.IOException;
-import java.nio.channels.ReadableByteChannel;
 
-import org.apache.cassandra.io.util.DataOutputStreamPlus;
-import org.apache.cassandra.streaming.StreamSession;
+import org.apache.cassandra.streaming.messages.OutgoingFileMessage;
+import org.apache.cassandra.streaming.messages.StreamMessage;
 
-public class KeepAliveMessage extends StreamMessage
+public interface StreamingMessageSender
 {
-    public static Serializer<KeepAliveMessage> serializer = new Serializer<KeepAliveMessage>()
-    {
-        public KeepAliveMessage deserialize(ReadableByteChannel in, int version, StreamSession session) throws IOException
-        {
-            return new KeepAliveMessage();
-        }
+    /**
+     * Invoked when a node wants to start a stream session with a peer.
+     */
+    void initialize() throws IOException;
 
-        public void serialize(KeepAliveMessage message, DataOutputStreamPlus out, int version, StreamSession session)
-        {}
-    };
+    void close();
 
-    public KeepAliveMessage()
-    {
-        super(Type.KEEP_ALIVE);
-    }
+    void sendMessage(StreamMessage message);
 
-    public String toString()
-    {
-        return "keep-alive";
-    }
+    void streamFile(OutgoingFileMessage message);
+
+    boolean connected();
 }

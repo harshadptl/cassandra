@@ -1299,6 +1299,9 @@
   <target name="long-test" depends="build-test" description="Execute functional tests">
     <testmacro inputdir="${test.long.src}"
                timeout="${test.long.timeout}">
+      <jvmarg value="-XX:+UnlockCommercialFeatures"/>
+      <jvmarg value="-XX:+FlightRecorder"/>
+      <jvmarg value="-XX:FlightRecorderOptions=defaultrecording=true,dumponexit=true,dumponexitpath=/tmp/dumponexit.jfr"/>
       <jvmarg value="-Dcassandra.ring_delay_ms=1000"/>
       <jvmarg value="-Dcassandra.tolerate_sstable_size=true"/>
     </testmacro>

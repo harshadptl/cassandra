@@ -286,12 +286,6 @@ public class BulkLoader
             this.sslStoragePort = sslStoragePort;
             serverEncOptions = serverEncryptionOptions;
         }
-
-        @Override
-        public StreamConnectionFactory getConnectionFactory()
-        {
-            return new BulkLoadConnectionFactory(storagePort, sslStoragePort, serverEncOptions, false);
-        }
     }
 
     public static class CmdLineOptions extends Options

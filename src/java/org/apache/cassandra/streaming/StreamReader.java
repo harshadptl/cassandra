@@ -17,34 +17,44 @@
  */
 package org.apache.cassandra.streaming;
 
-import java.io.*;
-import java.nio.channels.Channels;
-import java.nio.channels.ReadableByteChannel;
+import java.io.IOError;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.Collection;
 import java.util.UUID;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 import com.google.common.base.Throwables;
 import com.google.common.collect.UnmodifiableIterator;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.ning.compress.lzf.LZFInputStream;
-
-import org.apache.cassandra.schema.TableId;
-import org.apache.cassandra.schema.TableMetadata;
-import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.rows.*;
+import org.apache.cassandra.concurrent.ScheduledExecutors;
+import org.apache.cassandra.db.ColumnFamilyStore;
+import org.apache.cassandra.db.DecoratedKey;
+import org.apache.cassandra.db.DeletionTime;
+import org.apache.cassandra.db.Directories;
+import org.apache.cassandra.db.RegularAndStaticColumns;
+import org.apache.cassandra.db.SerializationHeader;
+import org.apache.cassandra.db.rows.EncodingStats;
+import org.apache.cassandra.db.rows.Row;
+import org.apache.cassandra.db.rows.SerializationHelper;
+import org.apache.cassandra.db.rows.Unfiltered;
+import org.apache.cassandra.db.rows.UnfilteredRowIterator;
 import org.apache.cassandra.io.sstable.SSTableMultiWriter;
 import org.apache.cassandra.io.sstable.SSTableSimpleIterator;
 import org.apache.cassandra.io.sstable.format.RangeAwareSSTableWriter;
 import org.apache.cassandra.io.sstable.format.SSTableFormat;
 import org.apache.cassandra.io.sstable.format.Version;
-import org.apache.cassandra.io.util.RewindableDataInputStreamPlus;
 import org.apache.cassandra.io.util.DataInputPlus;
+import org.apache.cassandra.io.util.RewindableDataInputStreamPlus;
+import org.apache.cassandra.schema.TableId;
+import org.apache.cassandra.schema.TableMetadata;
+import org.apache.cassandra.streaming.async.AppendingByteArrayInputStream;
+import org.apache.cassandra.streaming.compress.CompressionInfo;
 import org.apache.cassandra.streaming.messages.FileMessageHeader;
 import org.apache.cassandra.utils.ByteBufferUtil;
-import org.apache.cassandra.io.util.TrackedInputStream;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.Pair;
 
@@ -64,6 +74,7 @@ public class StreamReader
     protected final int sstableLevel;
     protected final SerializationHeader.Component header;
     protected final int fileSeqNum;
+    private final CompressionInfo compressionInfo;
 
     public StreamReader(FileMessageHeader header, StreamSession session)
     {
@@ -77,50 +88,49 @@ public class StreamReader
         this.sstableLevel = header.sstableLevel;
         this.header = header.header;
         this.fileSeqNum = header.sequenceNumber;
+        this.compressionInfo = header.getCompressionInfo();
     }
 
     /**
-     * @param channel where this reads data from
+     * @param in where this reads data from
      * @return SSTable transferred
      * @throws IOException if reading the remote sstable fails. Will throw an RTE if local write fails.
      */
     @SuppressWarnings("resource") // channel needs to remain open, streams on top of it can't be closed
-    public SSTableMultiWriter read(ReadableByteChannel channel) throws IOException
+    public SSTableMultiWriter read(ColumnFamilyStore cfs, AppendingByteArrayInputStream in) throws IOException
     {
-        long totalSize = totalSize();
+        final long totalSize = compressionInfo == null ? StreamingUtils.totalSize(sections) : StreamingUtils.totalSize(compressionInfo.chunks);
 
-        ColumnFamilyStore cfs = ColumnFamilyStore.getIfExists(tableId);
-        if (cfs == null)
-        {
-            // schema was dropped during streaming
-            throw new IOException("CF " + tableId + " was dropped during streaming");
-        }
-
-        logger.debug("[Stream #{}] Start receiving file #{} from {}, repairedAt = {}, size = {}, ks = '{}', table = '{}', pendingRepair = '{}'.",
+        // TODO:JEB temporarily disabling on-fly-compression 'cuz it's a pain in the ass with non-blocking IO.
+        // also the more efficient storage thanks to 8099/3.0 makes compression much less of a 'gotta have'
+        logger.debug("[Stream #{}] Start receiving file #{} from {}, repairedAt = {}, size = {}, ks = '{}', table = '{}'.",
                      session.planId(), fileSeqNum, session.peer, repairedAt, totalSize, cfs.keyspace.getName(),
-                     cfs.getTableName(), session.getPendingRepair());
-
-        TrackedInputStream in = new TrackedInputStream(new LZFInputStream(Channels.newInputStream(channel)));
-        StreamDeserializer deserializer = new StreamDeserializer(cfs.metadata(), in, inputVersion, getHeader(cfs.metadata()));
+                     cfs.getTableName());
+        StreamDeserializer deserializer = new StreamDeserializer(cfs.metadata.get(), in, inputVersion, getHeader(cfs.metadata.get()));
         SSTableMultiWriter writer = null;
+        ScheduledFuture<?> reportingTask = null;
         try
         {
             writer = createWriter(cfs, totalSize, repairedAt, session.getPendingRepair(), format);
-            while (in.getBytesRead() < totalSize)
-            {
+
+            long totalReadLen = StreamingUtils.totalSize(sections);
+            final String filename = writer.getFilename();
+            reportingTask = ScheduledExecutors.scheduledTasks.schedule(() ->
+                                                                       session.progress(filename, ProgressInfo.Direction.IN, in.getBytesRead(), totalSize),
+                                                                       1, TimeUnit.SECONDS);
+            while (in.getBytesRead() < totalReadLen)
                 writePartition(deserializer, writer);
-                // TODO move this to BytesReadTracker
-                session.progress(writer.getFilename(), ProgressInfo.Direction.IN, in.getBytesRead(), totalSize);
-            }
+
+            reportingTask.cancel(false);
+            session.progress(filename, ProgressInfo.Direction.IN, in.getBytesRead(), totalSize);
             logger.debug("[Stream #{}] Finished receiving file #{} from {} readBytes = {}, totalSize = {}",
                          session.planId(), fileSeqNum, session.peer, FBUtilities.prettyPrintMemory(in.getBytesRead()), FBUtilities.prettyPrintMemory(totalSize));
             return writer;
         }
         catch (Throwable e)
         {
-            if (deserializer != null)
-                logger.warn("[Stream {}] Error while reading partition {} from stream on ks='{}' and table='{}'.",
-                            session.planId(), deserializer.partitionKey(), cfs.keyspace.getName(), cfs.getTableName(), e);
+            logger.warn("[Stream {}] Error while reading partition {} from stream on ks='{}' and table='{}'.",
+                    session.planId(), deserializer.partitionKey(), cfs.keyspace.getName(), cfs.getTableName(), e);
             if (writer != null)
             {
                 writer.abort(e);
@@ -129,8 +139,9 @@ public class StreamReader
         }
         finally
         {
-            if (deserializer != null)
-                deserializer.cleanup();
+            deserializer.cleanup();
+            if (reportingTask != null)
+                reportingTask.cancel(false);
         }
     }
 
@@ -150,14 +161,6 @@ public class StreamReader
         return writer;
     }
 
-    protected long totalSize()
-    {
-        long size = 0;
-        for (Pair<Long, Long> section : sections)
-            size += section.right - section.left;
-        return size;
-    }
-
     protected void writePartition(StreamDeserializer deserializer, SSTableMultiWriter writer) throws IOException
     {
         writer.append(deserializer.newPartition());
@@ -166,13 +169,6 @@ public class StreamReader
 
     public static class StreamDeserializer extends UnmodifiableIterator<Unfiltered> implements UnfilteredRowIterator
     {
-        public static final int INITIAL_MEM_BUFFER_SIZE = Integer.getInteger("cassandra.streamdes.initial_mem_buffer_size", 32768);
-        public static final int MAX_MEM_BUFFER_SIZE = Integer.getInteger("cassandra.streamdes.max_mem_buffer_size", 1048576);
-        public static final int MAX_SPILL_FILE_SIZE = Integer.getInteger("cassandra.streamdes.max_spill_file_size", Integer.MAX_VALUE);
-
-        public static final String BUFFER_FILE_PREFIX = "buf";
-        public static final String BUFFER_FILE_SUFFIX = "dat";
-
         private final TableMetadata metadata;
         private final DataInputPlus in;
         private final SerializationHeader header;
@@ -184,7 +180,7 @@ public class StreamReader
         private Row staticRow;
         private IOException exception;
 
-        public StreamDeserializer(TableMetadata metadata, InputStream in, Version version, SerializationHeader header) throws IOException
+        public StreamDeserializer(TableMetadata metadata, InputStream in, Version version, SerializationHeader header)
         {
             this.metadata = metadata;
             this.in = new DataInputPlus.DataInputStreamPlus(in);

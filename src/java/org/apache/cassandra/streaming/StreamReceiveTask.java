@@ -89,7 +89,7 @@ public class StreamReceiveTask extends StreamTask
      *
      * @param sstable SSTable file received.
      */
-    public synchronized void received(SSTableMultiWriter sstable)
+    public void received(SSTableMultiWriter sstable)
     {
         if (done)
         {
@@ -99,7 +99,6 @@ public class StreamReceiveTask extends StreamTask
             return;
         }
 
-        remoteSSTablesReceived++;
         assert tableId.equals(sstable.getTableId());
 
         Collection<SSTableReader> finished = null;
@@ -111,13 +110,19 @@ public class StreamReceiveTask extends StreamTask
         {
             Throwables.maybeFail(sstable.abort(t));
         }
-        txn.update(finished, false);
-        sstables.addAll(finished);
 
-        if (remoteSSTablesReceived == totalFiles)
+
+        synchronized (this)
         {
-            done = true;
-            executor.submit(new OnCompletionRunnable(this));
+            txn.update(finished, false); // //TODO:JEB *really* not sure if txn is thread-safe
+            sstables.addAll(finished); // maybe use ConcurrentHM and moce this out of synchronized block
+
+            remoteSSTablesReceived++;
+            if (remoteSSTablesReceived == totalFiles)
+            {
+                done = true;
+                executor.submit(new OnCompletionRunnable(this));
+            }
         }
     }
 

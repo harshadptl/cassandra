@@ -24,6 +24,7 @@ import java.util.function.Consumer;
 
 import com.google.common.base.Preconditions;
 
+import io.netty.channel.WriteBufferWaterMark;
 import org.apache.cassandra.config.EncryptionOptions.ServerEncryptionOptions;
 import org.apache.cassandra.net.async.OutboundMessagingConnection.ConnectionHandshakeResult;
 import org.apache.cassandra.net.async.OutboundMessagingConnection.ConnectionType;
@@ -31,7 +32,7 @@ import org.apache.cassandra.net.async.OutboundMessagingConnection.ConnectionType
 /**
  * A collection of data points to be passed around for outbound connections.
  */
-class OutboundConnectionParams
+public class OutboundConnectionParams
 {
     public static final int DEFAULT_SEND_BUFFER_SIZE = 1 << 16;
 
@@ -49,11 +50,12 @@ class OutboundConnectionParams
     final ConnectionType connectionType;
     final int sendBufferSize;
     final boolean tcpNoDelay;
+    final WriteBufferWaterMark waterMark;
 
     private OutboundConnectionParams(InetSocketAddress localAddr, InetSocketAddress remoteAddr, int protocolVersion,
                              Consumer<ConnectionHandshakeResult> callback, ServerEncryptionOptions encryptionOptions, NettyFactory.Mode mode,
                              boolean compress, boolean coalesce, AtomicLong droppedMessageCount, AtomicLong completedMessageCount,
-                             AtomicLong pendingMessageCount, ConnectionType connectionType, int sendBufferSize, boolean tcpNoDelay)
+                             AtomicLong pendingMessageCount, ConnectionType connectionType, int sendBufferSize, boolean tcpNoDelay, WriteBufferWaterMark waterMark)
     {
         this.localAddr = localAddr;
         this.remoteAddr = remoteAddr;
@@ -69,6 +71,7 @@ class OutboundConnectionParams
         this.connectionType = connectionType;
         this.sendBufferSize = sendBufferSize;
         this.tcpNoDelay = tcpNoDelay;
+        this.waterMark = waterMark;
     }
 
     public static Builder builder()
@@ -97,6 +100,7 @@ class OutboundConnectionParams
         private ConnectionType connectionType;
         private int sendBufferSize = DEFAULT_SEND_BUFFER_SIZE;
         private boolean tcpNoDelay;
+        private WriteBufferWaterMark waterMark = WriteBufferWaterMark.DEFAULT;
 
         private Builder()
         {   }
@@ -203,13 +207,19 @@ class OutboundConnectionParams
             return this;
         }
 
+        public Builder waterMark(WriteBufferWaterMark waterMark)
+        {
+            this.waterMark = waterMark;
+            return this;
+        }
+
         public OutboundConnectionParams build()
         {
             Preconditions.checkArgument(sendBufferSize > 0, "illegal send buffer size: " + sendBufferSize);
 
             return new OutboundConnectionParams(localAddr, remoteAddr, protocolVersion, callback, encryptionOptions,
                                                 mode, compress, coalesce, droppedMessageCount, completedMessageCount,
-                                                pendingMessageCount, connectionType, sendBufferSize, tcpNoDelay);
+                                                pendingMessageCount, connectionType, sendBufferSize, tcpNoDelay, waterMark);
         }
     }
 }

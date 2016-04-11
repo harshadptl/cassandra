@@ -15,6 +15,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.cassandra.streaming.messages;
 
 import java.io.IOException;
@@ -27,44 +28,43 @@ import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.utils.Pair;
 
-public class SessionFailedMessage extends StreamMessage
+public class PrepareAckMessage extends StreamMessage
 {
-    public static final IVersionedSerializer<SessionFailedMessage> serializer = new IVersionedSerializer<SessionFailedMessage>()
+    public static final IVersionedSerializer<PrepareAckMessage> serializer = new IVersionedSerializer<PrepareAckMessage>()
     {
-        public void serialize(SessionFailedMessage msg, DataOutputPlus out, int version) throws IOException
+        public void serialize(PrepareAckMessage PrepareAckMessage, DataOutputPlus out, int version) throws IOException
         {
-            StreamMessage.serialize(msg, out, version);
+            StreamMessage.serialize(PrepareAckMessage, out, version);
         }
 
-        public SessionFailedMessage deserialize(DataInputPlus in, int version) throws IOException
+        public PrepareAckMessage deserialize(DataInputPlus in, int version) throws IOException
         {
             Pair<UUID, Integer> header = StreamMessage.deserialize(in, version);
-            return new SessionFailedMessage(header.left, header.right);
+            return new PrepareAckMessage(header.left, header.right);
         }
 
-        public long serializedSize(SessionFailedMessage msg, int version)
+        public long serializedSize(PrepareAckMessage PrepareAckMessage, int version)
         {
-            return StreamMessage.serializedSize(msg, version);
+            return StreamMessage.serializedSize(PrepareAckMessage, version);
         }
     };
 
-    public SessionFailedMessage(UUID planId, int sessionIndex)
+    public PrepareAckMessage(UUID planId, int sessionIndex)
     {
         super(planId, sessionIndex);
     }
 
     @Override
-    public MessageOut<SessionFailedMessage> createMessageOut()
+    public MessageOut<PrepareAckMessage> createMessageOut()
     {
-        return new MessageOut<>(MessagingService.Verb.STREAM_FAILED, this, serializer);
+        return new MessageOut<>(MessagingService.Verb.STREAM_PREPARE_ACK, this, serializer);
     }
 
     public Type getType()
     {
-        return Type.SESSION_FAILED;
+        return Type.PREPARE_ACK;
     }
 
-    @Override
     public IVersionedSerializer<? extends StreamMessage> getSerializer()
     {
         return serializer;

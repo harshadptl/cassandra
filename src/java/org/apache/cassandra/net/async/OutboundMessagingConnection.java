@@ -47,7 +47,6 @@ import org.apache.cassandra.config.EncryptionOptions.ServerEncryptionOptions;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.net.async.NettyFactory.Mode;
-import org.apache.cassandra.net.async.NettyFactory.OutboundChannelInitializer;
 import org.apache.cassandra.utils.CoalescingStrategies.CoalescingStrategy;
 import org.apache.cassandra.utils.JVMStabilityInspector;
 
@@ -370,7 +369,7 @@ public class OutboundMessagingConnection
                                                                   .tcpNoDelay(tcpNoDelay)
                                                                   .build();
 
-        return NettyFactory.createOutboundBootstrap(params);
+        return NettyFactory.createOutboundBootstrap(params, NettyFactory.OUTBOUND_GROUP);
     }
 
     private boolean isLocalDC(InetAddress targetHost)
@@ -551,7 +550,7 @@ public class OutboundMessagingConnection
     /**
      * A simple class to hold the result of completed connection attempt.
      */
-    static class ConnectionHandshakeResult
+    public static class ConnectionHandshakeResult
     {
         /**
          * Describes the result of receiving the response back from the peer (Message 2 of the handshake)

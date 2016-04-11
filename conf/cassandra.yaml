@@ -809,19 +809,10 @@ slow_query_log_timeout_in_ms: 500
 # and the times are synchronized between the nodes.
 cross_node_timeout: false
 
-# Set keep-alive period for streaming
-# This node will send a keep-alive message periodically with this period.
-# If the node does not receive a keep-alive message from the peer for
-# 2 keep-alive cycles the stream session times out and fail
-# Default value is 300s (5 minutes), which means stalled stream
-# times out in 10 minutes by default
-# streaming_keep_alive_period_in_secs: 300
-
 # Limit number of connections per host for streaming
 # Increase this when you notice that joins are CPU-bound rather that network
 # bound (for example a few nodes with big files).
 # streaming_connections_per_host: 1
-
 
 # phi value that must be reached for a host to be marked down.
 # most users should never need to adjust this.

@@ -29,35 +29,32 @@ import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.io.util.DataOutputBufferFixed;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.net.CompactEndpointSerializationHelper;
+import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
+import org.apache.cassandra.streaming.StreamSession;
+import org.apache.cassandra.utils.Pair;
 import org.apache.cassandra.utils.UUIDSerializer;
 
 /**
- * StreamInitMessage is first sent from the node where {@link org.apache.cassandra.streaming.StreamSession} is started,
- * to initiate corresponding {@link org.apache.cassandra.streaming.StreamSession} on the other side.
+ * StreamInitMessage is first sent from the node where {@link StreamSession} is started,
+ * to initiate corresponding {@link StreamSession} on the other side.
  */
-public class StreamInitMessage
+public class StreamInitMessage extends StreamMessage
 {
-    public static IVersionedSerializer<StreamInitMessage> serializer = new StreamInitMessageSerializer();
+    public static final IVersionedSerializer<StreamInitMessage> serializer = new StreamInitMessageSerializer();
 
     public final InetAddress from;
-    public final int sessionIndex;
-    public final UUID planId;
     public final String description;
 
-    // true if this init message is to connect for outgoing message on receiving side
-    public final boolean isForOutgoing;
-    public final boolean keepSSTableLevel;
+    final boolean keepSSTableLevel;
     public final boolean isIncremental;
     public final UUID pendingRepair;
 
-    public StreamInitMessage(InetAddress from, int sessionIndex, UUID planId, String description, boolean isForOutgoing, boolean keepSSTableLevel, boolean isIncremental, UUID pendingRepair)
+    public StreamInitMessage(InetAddress from, int sessionIndex, UUID planId, String description, boolean keepSSTableLevel, boolean isIncremental, UUID pendingRepair)
     {
+        super(planId, sessionIndex);
         this.from = from;
-        this.sessionIndex = sessionIndex;
-        this.planId = planId;
         this.description = description;
-        this.isForOutgoing = isForOutgoing;
         this.keepSSTableLevel = keepSSTableLevel;
         this.isIncremental = isIncremental;
         this.pendingRepair = pendingRepair;
@@ -105,15 +102,30 @@ public class StreamInitMessage
         return buffer;
     }
 
+    @Override
+    public MessageOut<? extends StreamMessage> createMessageOut()
+    {
+        return new MessageOut<>(MessagingService.Verb.STREAM_INIT, this, serializer);
+    }
+
+    public Type getType()
+    {
+        return Type.STREAM_INIT;
+    }
+
+    @Override
+    public IVersionedSerializer<? extends StreamMessage> getSerializer()
+    {
+        return serializer;
+    }
+
     private static class StreamInitMessageSerializer implements IVersionedSerializer<StreamInitMessage>
     {
         public void serialize(StreamInitMessage message, DataOutputPlus out, int version) throws IOException
         {
+            StreamMessage.serialize(message, out, version);
             CompactEndpointSerializationHelper.serialize(message.from, out);
-            out.writeInt(message.sessionIndex);
-            UUIDSerializer.serializer.serialize(message.planId, out, MessagingService.current_version);
             out.writeUTF(message.description);
-            out.writeBoolean(message.isForOutgoing);
             out.writeBoolean(message.keepSSTableLevel);
             out.writeBoolean(message.isIncremental);
 
@@ -126,25 +138,21 @@ public class StreamInitMessage
 
         public StreamInitMessage deserialize(DataInputPlus in, int version) throws IOException
         {
+            Pair<UUID, Integer> header = StreamMessage.deserialize(in, version);
             InetAddress from = CompactEndpointSerializationHelper.deserialize(in);
-            int sessionIndex = in.readInt();
-            UUID planId = UUIDSerializer.serializer.deserialize(in, MessagingService.current_version);
             String description = in.readUTF();
-            boolean sentByInitiator = in.readBoolean();
             boolean keepSSTableLevel = in.readBoolean();
 
             boolean isIncremental = in.readBoolean();
             UUID pendingRepair = in.readBoolean() ? UUIDSerializer.serializer.deserialize(in, version) : null;
-            return new StreamInitMessage(from, sessionIndex, planId, description, sentByInitiator, keepSSTableLevel, isIncremental, pendingRepair);
+            return new StreamInitMessage(from, header.right, header.left, description, keepSSTableLevel, isIncremental, pendingRepair);
         }
 
         public long serializedSize(StreamInitMessage message, int version)
         {
-            long size = CompactEndpointSerializationHelper.serializedSize(message.from);
-            size += TypeSizes.sizeof(message.sessionIndex);
-            size += UUIDSerializer.serializer.serializedSize(message.planId, MessagingService.current_version);
+            long size = StreamMessage.serializedSize(message, version);
+            size += CompactEndpointSerializationHelper.serializedSize(message.from);
             size += TypeSizes.sizeof(message.description);
-            size += TypeSizes.sizeof(message.isForOutgoing);
             size += TypeSizes.sizeof(message.keepSSTableLevel);
             size += TypeSizes.sizeof(message.isIncremental);
             size += TypeSizes.sizeof(message.pendingRepair != null);
@@ -154,5 +162,23 @@ public class StreamInitMessage
             }
             return size;
         }
+    }
+
+    @Override
+    public boolean equals(Object o)
+    {
+        if (!super.equals(o) || !(o instanceof StreamInitMessage))
+            return false;
+        StreamInitMessage msg = (StreamInitMessage)o;
+        return from.equals(msg.from) &&
+               description.equals(msg.description) &&
+               keepSSTableLevel == msg.keepSSTableLevel &&
+               isIncremental == msg.isIncremental;
+    }
+
+    @Override
+    public String toString()
+    {
+        return String.format("%s, from: %s, description: %s, keepSSTableLevel: %b, isIncremental: %b", super.toString(), from, description, keepSSTableLevel, isIncremental);
     }
 }

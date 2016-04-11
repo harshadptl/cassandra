@@ -20,7 +20,6 @@ package org.apache.cassandra.net.async;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.util.function.Consumer;
 
 import org.junit.After;
 import org.junit.Assert;
@@ -181,7 +180,7 @@ public class InboundHandshakeHandlerTest
         buf.writeInt(MESSAGING_VERSION);
         CompactEndpointSerializationHelper.serialize(addr.getAddress(), new ByteBufOutputStream(buf));
         State state = handler.handleMessagingStartResponse(channel.pipeline().firstContext(), buf);
-        Assert.assertEquals(State.MESSAGING_HANDSHAKE_COMPLETE, state);
+        Assert.assertEquals(State.HANDSHAKE_COMPLETE, state);
         Assert.assertTrue(channel.isOpen());
         Assert.assertTrue(channel.isActive());
     }

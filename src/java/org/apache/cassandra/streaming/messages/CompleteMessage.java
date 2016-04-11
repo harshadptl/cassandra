@@ -17,31 +17,61 @@
  */
 package org.apache.cassandra.streaming.messages;
 
-import java.nio.channels.ReadableByteChannel;
+import java.io.IOException;
+import java.util.UUID;
 
-import org.apache.cassandra.io.util.DataOutputStreamPlus;
-import org.apache.cassandra.streaming.StreamSession;
+import org.apache.cassandra.io.IVersionedSerializer;
+import org.apache.cassandra.io.util.DataInputPlus;
+import org.apache.cassandra.io.util.DataOutputPlus;
+import org.apache.cassandra.net.MessageOut;
+import org.apache.cassandra.net.MessagingService;
+import org.apache.cassandra.utils.Pair;
 
 public class CompleteMessage extends StreamMessage
 {
-    public static Serializer<CompleteMessage> serializer = new Serializer<CompleteMessage>()
+    public static final IVersionedSerializer<CompleteMessage> serializer = new IVersionedSerializer<CompleteMessage>()
     {
-        public CompleteMessage deserialize(ReadableByteChannel in, int version, StreamSession session)
+        public void serialize(CompleteMessage completeMessage, DataOutputPlus out, int version) throws IOException
         {
-            return new CompleteMessage();
+            StreamMessage.serialize(completeMessage, out, version);
         }
 
-        public void serialize(CompleteMessage message, DataOutputStreamPlus out, int version, StreamSession session) {}
+        public CompleteMessage deserialize(DataInputPlus in, int version) throws IOException
+        {
+            Pair<UUID, Integer> header = StreamMessage.deserialize(in, version);
+            return new CompleteMessage(header.left, header.right);
+        }
+
+        public long serializedSize(CompleteMessage completeMessage, int version)
+        {
+            return StreamMessage.serializedSize(completeMessage, version);
+        }
     };
 
-    public CompleteMessage()
+    public CompleteMessage(UUID planId, int sessionIndex)
     {
-        super(Type.COMPLETE);
+        super(planId, sessionIndex);
     }
 
     @Override
     public String toString()
     {
         return "Complete";
+    }
+
+    @Override
+    public MessageOut<CompleteMessage> createMessageOut()
+    {
+        return new MessageOut<>(MessagingService.Verb.STREAM_COMPLETE, this, serializer);
+    }
+
+    public Type getType()
+    {
+        return Type.COMPLETE;
+    }
+
+    public IVersionedSerializer<? extends StreamMessage> getSerializer()
+    {
+        return serializer;
     }
 }

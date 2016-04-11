@@ -38,7 +38,7 @@ import org.apache.cassandra.utils.JVMStabilityInspector;
  * There are callbacks or return values as it is expected that the handlers in the netty pipeline will start
  * the internode messaging handshake automatically.
  */
-class OutboundConnector
+public class OutboundConnector
 {
     private static final Logger logger = LoggerFactory.getLogger(OutboundConnector.class);
 
@@ -68,7 +68,7 @@ class OutboundConnector
     private volatile ChannelFuture connectFuture;
 
     @VisibleForTesting
-    OutboundConnector(Bootstrap bootstrap, @Nullable InetSocketAddress localAddr, InetSocketAddress remoteAddr)
+    public OutboundConnector(Bootstrap bootstrap, @Nullable InetSocketAddress localAddr, InetSocketAddress remoteAddr)
     {
         this.bootstrap = bootstrap;
         this.localAddr = localAddr;

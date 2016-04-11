@@ -24,6 +24,8 @@ import org.apache.cassandra.auth.IInternodeAuthenticator;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.net.CompactEndpointSerializationHelper;
 import org.apache.cassandra.net.MessagingService;
+import org.apache.cassandra.streaming.async.StreamingInboundHandler;
+import org.apache.cassandra.streaming.messages.StreamMessage;
 
 /**
  * 'Server'-side component that negotiates the internode handshake when establishing a new connection.
@@ -34,7 +36,7 @@ class InboundHandshakeHandler extends ByteToMessageDecoder
 {
     private static final Logger logger = LoggerFactory.getLogger(NettyFactory.class);
 
-    enum State { START, AWAITING_HANDSHAKE_BEGIN, AWAIT_STREAM_START_RESPONSE, AWAIT_MESSAGING_START_RESPONSE, MESSAGING_HANDSHAKE_COMPLETE, HANDSHAKE_FAIL }
+    enum State { START, AWAITING_HANDSHAKE_BEGIN, AWAIT_MESSAGING_START_RESPONSE, HANDSHAKE_COMPLETE, HANDSHAKE_FAIL }
 
     private State state;
 
@@ -141,9 +143,16 @@ class InboundHandshakeHandler extends ByteToMessageDecoder
         boolean isStream = MessagingService.getBits(header, 3, 1) == 1;
         if (isStream)
         {
-            // TODO fill in once streaming is moved to netty
-            ctx.close();
-            return State.AWAIT_STREAM_START_RESPONSE;
+            // streaming connections are per-session and have a fixed version.  we can't do anything with a wrong-version stream connection, so drop it.
+            if (version != StreamMessage.CURRENT_VERSION)
+            {
+                logger.warn("Received stream using protocol version %d (my version %d). Terminating connection", version, MessagingService.current_version);
+                ctx.close();
+                return State.HANDSHAKE_FAIL;
+            }
+
+            setupStreamingPipeline(ctx, version);
+            return State.HANDSHAKE_COMPLETE;
         }
         else
         {
@@ -175,6 +184,14 @@ class InboundHandshakeHandler extends ByteToMessageDecoder
             handshakeTimeout = ctx.executor().schedule(() -> failHandshake(ctx), timeout, TimeUnit.MILLISECONDS);
             return State.AWAIT_MESSAGING_START_RESPONSE;
         }
+    }
+
+    private void setupStreamingPipeline(ChannelHandlerContext ctx, int protocolVersion)
+    {
+        ChannelPipeline pipeline = ctx.pipeline();
+        InetSocketAddress address = (InetSocketAddress) ctx.channel().remoteAddress();
+        pipeline.addLast("streamInbound", new StreamingInboundHandler(address, protocolVersion));
+        pipeline.remove(this);
     }
 
     /**
@@ -209,7 +226,7 @@ class InboundHandshakeHandler extends ByteToMessageDecoder
         logger.trace("Set version for {} to {} (will use {})", from, maxVersion, MessagingService.instance().getVersion(from));
 
         setupMessagingPipeline(ctx.pipeline(), from, compressed, version);
-        return State.MESSAGING_HANDSHAKE_COMPLETE;
+        return State.HANDSHAKE_COMPLETE;
     }
 
     @VisibleForTesting
@@ -224,7 +241,7 @@ class InboundHandshakeHandler extends ByteToMessageDecoder
 
     private void failHandshake(ChannelHandlerContext ctx)
     {
-        if (state == State.MESSAGING_HANDSHAKE_COMPLETE)
+        if (state == State.HANDSHAKE_COMPLETE)
             return;
 
         state = State.HANDSHAKE_FAIL;

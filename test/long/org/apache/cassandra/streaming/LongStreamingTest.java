@@ -84,7 +84,7 @@ public class LongStreamingTest
                                                   .using(insert).build();
         long start = System.nanoTime();
 
-        for (int i = 0; i < 10_000_000; i++)
+        for (int i = 0; i < 30_000_000; i++)
             writer.addRow(i, "test1", 24);
 
         writer.close();

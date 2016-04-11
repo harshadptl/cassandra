@@ -15,16 +15,16 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.cassandra.streaming;
 
-import java.io.IOException;
-import java.net.InetAddress;
-import java.net.Socket;
+package org.apache.cassandra.streaming.async;
 
-/**
- * Interface that creates connection used by streaming.
- */
-public interface StreamConnectionFactory
+import org.apache.cassandra.streaming.StreamSession;
+import org.apache.cassandra.utils.CloseableIterator;
+
+interface StreamingFileChunker extends Iterable<Object>, CloseableIterator<Object>
 {
-    Socket createConnection(InetAddress peer) throws IOException;
+    int nextChunkSize();
+    void updateSessionProgress(StreamSession session);
+
+    long getTotalSize();
 }

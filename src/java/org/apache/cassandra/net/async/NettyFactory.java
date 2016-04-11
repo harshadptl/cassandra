@@ -15,7 +15,6 @@ import io.netty.channel.ChannelOption;
 import io.netty.channel.ChannelPipeline;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.ServerChannel;
-import io.netty.channel.WriteBufferWaterMark;
 import io.netty.channel.epoll.Epoll;
 import io.netty.channel.epoll.EpollEventLoopGroup;
 import io.netty.channel.epoll.EpollServerSocketChannel;
@@ -46,7 +45,7 @@ import org.apache.cassandra.utils.FBUtilities;
  * A central spot for building Netty {@link Channel}s. Channels here are setup with a pipeline to participate
  * in the internode protocol handshake, either the inbound or outbound side as per the method invoked.
  */
-public final class NettyFactory
+public final class  NettyFactory
 {
     private static final Logger logger = LoggerFactory.getLogger(NettyFactory.class);
 
@@ -87,7 +86,8 @@ public final class NettyFactory
 
     // TODO:JEB chat more with Ariel about sizing the groups
     private static final EventLoopGroup INBOUND_GROUP = getEventLoopGroup(FBUtilities.getAvailableProcessors(), "MessagingService-NettyInbound-Threads", false);
-    private static final EventLoopGroup OUTBOUND_GROUP = getEventLoopGroup(FBUtilities.getAvailableProcessors(), "MessagingService-NettyOutbound-Threads", true);
+    static final EventLoopGroup OUTBOUND_GROUP = getEventLoopGroup(FBUtilities.getAvailableProcessors(), "MessagingService-NettyOutbound-Threads", true);
+    public static final EventLoopGroup STREAMING_CLIENT_GROUP = getEventLoopGroup(FBUtilities.getAvailableProcessors(), "Streaming-NettyOutbound-Threads", true);
 
     /**
      * Create an {@link EventLoopGroup}, for epoll or nio. The {@code boostIoRatio} flag passes a hint to the netty
@@ -157,8 +157,7 @@ public final class NettyFactory
             Throwable failedChannelCause = channelFuture.cause();
             if (failedChannelCause.getMessage().contains("in use"))
             {
-                throw new ConfigurationException(channelFuture.channel().remoteAddress()
-                                                 + " is in use by another process.  Change listen_address:storage_port " +
+                throw new ConfigurationException(localAddr + " is in use by another process.  Change listen_address:storage_port " +
                                                  "in cassandra.yaml to values that do not conflict with other services");
             }
             else if (failedChannelCause.getMessage().contains("Cannot assign requested address"))
@@ -219,29 +218,29 @@ public final class NettyFactory
      * Create the {@link Bootstrap} for connecting to a remote peer. This method does <b>not</b> attempt to connect to the peer,
      * and thus does not block.
      */
-    static Bootstrap createOutboundBootstrap(OutboundConnectionParams params)
+    public static Bootstrap createOutboundBootstrap(OutboundConnectionParams params, EventLoopGroup eventLoopGroup)
     {
         logger.debug("creating outbound bootstrap to peer {}, encryption: {}", params.remoteAddr,
                     encryptionLogStatement(params.encryptionOptions));
         Class<? extends Channel>  transport = useEpoll ? EpollSocketChannel.class : NioSocketChannel.class;
-        return new Bootstrap().group(OUTBOUND_GROUP)
-                                             .channel(transport)
-                                             .option(ChannelOption.ALLOCATOR, OUTBOUND_ALLOCATOR)
-                                             .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 2000)
-                                             .option(ChannelOption.SO_KEEPALIVE, true)
-                                             .option(ChannelOption.SO_REUSEADDR, true)
-                                             .option(ChannelOption.SO_SNDBUF, params.sendBufferSize)
-                                             .option(ChannelOption.SO_RCVBUF, 1 << 15)
-                                             .option(ChannelOption.TCP_NODELAY, params.tcpNoDelay)
-                                             .option(ChannelOption.WRITE_BUFFER_WATER_MARK, WriteBufferWaterMark.DEFAULT)
-                                             .handler(new OutboundChannelInitializer(params));
+        return new Bootstrap().group(eventLoopGroup)
+                              .channel(transport)
+                              .option(ChannelOption.ALLOCATOR, OUTBOUND_ALLOCATOR)
+                              .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 2000)
+                              .option(ChannelOption.SO_KEEPALIVE, true)
+                              .option(ChannelOption.SO_REUSEADDR, true)
+                              .option(ChannelOption.SO_SNDBUF, params.sendBufferSize)
+                              .option(ChannelOption.SO_RCVBUF, 1 << 15)
+                              .option(ChannelOption.TCP_NODELAY, params.tcpNoDelay)
+                              .option(ChannelOption.WRITE_BUFFER_WATER_MARK, params.waterMark)
+                              .handler(new OutboundChannelInitializer(params));
     }
 
-    static class OutboundChannelInitializer extends ChannelInitializer<SocketChannel>
+    private static class OutboundChannelInitializer extends ChannelInitializer<SocketChannel>
     {
         private final OutboundConnectionParams params;
 
-        OutboundChannelInitializer(OutboundConnectionParams params)
+        public OutboundChannelInitializer(OutboundConnectionParams params)
         {
             this.params = params;
         }
@@ -264,5 +263,13 @@ public final class NettyFactory
 
             pipeline.addLast(HANDSHAKE_HANDLER_CHANNEL_HANDLER_NAME, new OutboundHandshakeHandler(params));
         }
+    }
+
+    /**
+     * Determines if the {@link Channel} is using a secure communications transport (like SSL/TLS)/
+     */
+    public static boolean isSecure(Channel channel)
+    {
+        return channel.pipeline().get(SslHandler.class) != null;
     }
 }

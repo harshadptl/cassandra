@@ -21,7 +21,6 @@ import java.net.InetAddress;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-
 import javax.management.ListenerNotFoundException;
 import javax.management.MBeanNotificationInfo;
 import javax.management.NotificationFilter;
@@ -33,11 +32,12 @@ import com.google.common.collect.Iterables;
 import com.google.common.collect.Sets;
 import com.google.common.util.concurrent.MoreExecutors;
 import com.google.common.util.concurrent.RateLimiter;
-
 import org.cliffc.high_scale_lib.NonBlockingHashMap;
+
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.streaming.management.StreamEventJMXNotifier;
 import org.apache.cassandra.streaming.management.StreamStateCompositeData;
+import org.apache.cassandra.streaming.messages.StreamMessage;
 
 /**
  * StreamManager manages currently running {@link StreamResultFuture}s and provides status of all operation invoked.
@@ -56,11 +56,6 @@ public class StreamManager implements StreamManagerMBean
      *
      * @return StreamRateLimiter with rate limit set based on peer location.
      */
-    public static StreamRateLimiter getRateLimiter(InetAddress peer)
-    {
-        return new StreamRateLimiter(peer);
-    }
-
     public static class StreamRateLimiter
     {
         private static final double BYTES_PER_MEGABIT = (1024 * 1024) / 8; // from bits
@@ -97,6 +92,22 @@ public class StreamManager implements StreamManagerMBean
             limiter.acquire(toTransfer);
             if (!isLocalDC)
                 interDCLimiter.acquire(toTransfer);
+        }
+
+        public boolean tryAcquireGlobal(int toTransfer)
+        {
+            // good news: RateLimiter allows us to attempt to acquire without blocking.
+            // bad news: if we can't acquire, the RateLimiter API does not tell us how long we should wait before trying again :(
+            return limiter.tryAcquire(toTransfer);
+        }
+
+        public boolean tryAcquireInterDc(int toTransfer)
+        {
+            // good news: RateLimiter allows us to attempt to acquire without blocking.
+            // bad news: if we can't acquire, the RateLimiter API does not tell us how long we should wait before trying again :(
+            return interDCLimiter.tryAcquire(toTransfer);
+            // it would ge great, but perhaps infeasible/unpractical, to return the acquired count back to
+            // the global limiter if we couldn't acquire here
         }
     }
 
@@ -136,7 +147,7 @@ public class StreamManager implements StreamManagerMBean
         initiatedStreams.put(result.planId, result);
     }
 
-    public void registerReceiving(final StreamResultFuture result)
+    public StreamResultFuture registerReceiving(final StreamResultFuture result)
     {
         result.addEventListener(notifier);
         // Make sure we remove the stream on completion (whether successful or not)
@@ -148,7 +159,8 @@ public class StreamManager implements StreamManagerMBean
             }
         }, MoreExecutors.directExecutor());
 
-        receivingStreams.put(result.planId, result);
+        StreamResultFuture previous = receivingStreams.putIfAbsent(result.planId, result);
+        return previous ==  null ? result : previous;
     }
 
     public StreamResultFuture getReceivingStream(UUID planId)
@@ -174,5 +186,32 @@ public class StreamManager implements StreamManagerMBean
     public MBeanNotificationInfo[] getNotificationInfo()
     {
         return notifier.getNotificationInfo();
+    }
+
+    public void receiveMessage(InetAddress peer, StreamMessage streamMessage)
+    {
+        StreamSession session = findSession(peer, streamMessage.planId, streamMessage.sessionIndex);
+        if (session == null)
+            throw new IllegalStateException(String.format("cannot locate stream session with planId %s and index %d", streamMessage.planId, streamMessage.sessionIndex));
+
+        session.receive(streamMessage);
+    }
+
+    public StreamSession findSession(InetAddress peer, UUID planId, int sessionIndex)
+    {
+        StreamSession session = findSession(initiatedStreams, peer, planId, sessionIndex);
+        if (session !=  null)
+            return session;
+
+        return findSession(receivingStreams, peer, planId, sessionIndex);
+    }
+
+    private StreamSession findSession(Map<UUID, StreamResultFuture> streams, InetAddress peer, UUID planId, int sessionIndex)
+    {
+        StreamResultFuture streamResultFuture = streams.get(planId);
+        if (streamResultFuture == null)
+            return null;
+
+        return streamResultFuture.getSession(peer, sessionIndex);
     }
 }

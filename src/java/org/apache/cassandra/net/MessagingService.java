@@ -101,6 +101,14 @@ import org.apache.cassandra.service.StorageProxy;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.service.paxos.Commit;
 import org.apache.cassandra.service.paxos.PrepareResponse;
+import org.apache.cassandra.streaming.messages.CompleteMessage;
+import org.apache.cassandra.streaming.messages.PrepareAckMessage;
+import org.apache.cassandra.streaming.messages.PrepareSynAckMessage;
+import org.apache.cassandra.streaming.messages.PrepareSynMessage;
+import org.apache.cassandra.streaming.messages.ReceivedMessage;
+import org.apache.cassandra.streaming.messages.SessionFailedMessage;
+import org.apache.cassandra.streaming.messages.StreamInitAckMessage;
+import org.apache.cassandra.streaming.messages.StreamInitMessage;
 import org.apache.cassandra.tracing.TraceState;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.BooleanSerializer;
@@ -250,6 +258,14 @@ public final class MessagingService implements MessagingServiceMBean
                 return DatabaseDescriptor.getRangeRpcTimeout();
             }
         },
+        STREAM_COMPLETE,
+        STREAM_PREPARE_SYN,
+        STREAM_PREPARE_SYNACK,
+        STREAM_PREPARE_ACK,
+        STREAM_RECEIVED,
+        STREAM_FAILED,
+        STREAM_INIT,
+        STREAM_INIT_ACK,
         // remember to add new verbs at the end, since we serialize by ordinal
         UNUSED_1,
         UNUSED_2,
@@ -310,6 +326,15 @@ public final class MessagingService implements MessagingServiceMBean
         put(Verb.SNAPSHOT, Stage.MISC);
         put(Verb.ECHO, Stage.GOSSIP);
 
+        put(Verb.STREAM_COMPLETE, Stage.MISC);
+        put(Verb.STREAM_FAILED, Stage.MISC);
+        put(Verb.STREAM_INIT, Stage.MISC);
+        put(Verb.STREAM_INIT_ACK, Stage.MISC);
+        put(Verb.STREAM_PREPARE_SYN, Stage.MISC);
+        put(Verb.STREAM_PREPARE_SYNACK, Stage.MISC);
+        put(Verb.STREAM_PREPARE_ACK, Stage.MISC);
+        put(Verb.STREAM_RECEIVED, Stage.MISC);
+
         put(Verb.UNUSED_1, Stage.INTERNAL_RESPONSE);
         put(Verb.UNUSED_2, Stage.INTERNAL_RESPONSE);
         put(Verb.UNUSED_3, Stage.INTERNAL_RESPONSE);
@@ -351,6 +376,14 @@ public final class MessagingService implements MessagingServiceMBean
         put(Verb.HINT, HintMessage.serializer);
         put(Verb.BATCH_STORE, Batch.serializer);
         put(Verb.BATCH_REMOVE, UUIDSerializer.serializer);
+        put(Verb.STREAM_COMPLETE, CompleteMessage.serializer);
+        put(Verb.STREAM_FAILED, SessionFailedMessage.serializer);
+        put(Verb.STREAM_INIT, StreamInitMessage.serializer);
+        put(Verb.STREAM_INIT_ACK, StreamInitAckMessage.serializer);
+        put(Verb.STREAM_PREPARE_SYN, PrepareSynMessage.serializer);
+        put(Verb.STREAM_PREPARE_SYNACK, PrepareSynAckMessage.serializer);
+        put(Verb.STREAM_PREPARE_ACK, PrepareAckMessage.serializer);
+        put(Verb.STREAM_RECEIVED, ReceivedMessage.serializer);
     }};
 
     /**

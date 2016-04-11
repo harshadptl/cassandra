@@ -18,6 +18,7 @@
 package org.apache.cassandra.streaming.compress;
 
 import java.io.IOException;
+import java.util.Arrays;
 
 import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.io.IVersionedSerializer;
@@ -41,6 +42,14 @@ public class CompressionInfo
         assert chunks != null && parameters != null;
         this.chunks = chunks;
         this.parameters = parameters;
+    }
+
+    public boolean equals(Object o)
+    {
+        if (o == null || !(o instanceof CompressionInfo))
+            return false;
+        CompressionInfo compressionInfo = (CompressionInfo)o;
+        return Arrays.equals(chunks, compressionInfo.chunks);
     }
 
     static class CompressionInfoSerializer implements IVersionedSerializer<CompressionInfo>

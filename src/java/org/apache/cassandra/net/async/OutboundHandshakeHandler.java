@@ -19,7 +19,6 @@
 package org.apache.cassandra.net.async;
 
 import java.io.DataOutput;
-import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.List;
 import java.util.concurrent.Future;
@@ -32,7 +31,6 @@ import org.slf4j.LoggerFactory;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufOutputStream;
-import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandler;
@@ -56,6 +54,9 @@ import org.apache.cassandra.utils.FBUtilities;
  *
  * Upon completion of the handshake (on success, fail or timeout), the {@link #callback} is invoked to let the listener
  * know the result of th connect/handshake.
+ *
+ * For internode messaging connections, a three-way handshake is preformed. For streaming connections,
+ * only the first message of the three-way handshake is required.
  *
  * This class extends {@link ByteToMessageDecoder}, which is a {@link ChannelInboundHandler}, because after the
  * first message is sent on becoming active in the channel, it waits for the peer's response (the second message
@@ -121,15 +122,28 @@ class OutboundHandshakeHandler extends ByteToMessageDecoder
         this.mode = params.mode;
     }
 
-    // invoked when the channel is active, and sends out the first handshake message
+    /**
+     * Sends out the first handshake message when the channel is made active. In the case of streaming,
+     * we do not require a full bi-directional handshake; the initial message, containing the streaming
+     * protocol version, is all that is required.
+     */
     @Override
     public void channelActive(final ChannelHandlerContext ctx) throws Exception
     {
         logger.debug("starting handshake with {}", remoteAddr);
         ctx.writeAndFlush(firstHandshakeMessage(ctx.alloc().buffer(FIRST_MESSAGE_LENGTH), createHeader(messagingVersion, params.compress, mode)));
-        long timeout = TimeUnit.MILLISECONDS.toNanos(DatabaseDescriptor.getRpcTimeout());
-        timeoutFuture = ctx.executor().schedule(() -> abortHandshake(ctx), timeout, TimeUnit.MILLISECONDS);
         ctx.fireChannelActive();
+
+        if (mode == NettyFactory.Mode.MESSAGING)
+        {
+            long timeout = TimeUnit.MILLISECONDS.toNanos(DatabaseDescriptor.getRpcTimeout());
+            timeoutFuture = ctx.executor().schedule(() -> abortHandshake(ctx), timeout, TimeUnit.MILLISECONDS);
+        }
+        else
+        {
+            callback.accept(new ConnectionHandshakeResult(ctx.channel(), messagingVersion, Result.GOOD, null));
+            ctx.channel().pipeline().remove(this);
+        }
     }
 
     @VisibleForTesting
