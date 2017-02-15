@@ -243,7 +243,7 @@ public class BulkLoader
         }
     }
 
-    private static SSLOptions buildSSLOptions(EncryptionOptions.ClientEncryptionOptions clientEncryptionOptions)
+    private static SSLOptions buildSSLOptions(EncryptionOptions clientEncryptionOptions)
     {
 
         if (!clientEncryptionOptions.enabled)

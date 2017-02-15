@@ -52,7 +52,8 @@ public final class NettyFactory
 
     public enum Mode { MESSAGING, STREAMING }
 
-    private static final String SSL_CHANNEL_HANDLER_NAME = "ssl";
+    static final String SSL_CHANNEL_HANDLER_NAME = "ssl";
+    private static final String OPTIONAL_SSL_CHANNEL_HANDLER_NAME = "optionalSsl";
     static final String INBOUND_COMPRESSOR_HANDLER_NAME = "inboundCompressor";
     static final String OUTBOUND_COMPRESSOR_HANDLER_NAME = "outboundCompressor";
     private static final String HANDSHAKE_HANDLER_CHANNEL_HANDLER_NAME = "handshakeHandler";
@@ -192,12 +193,19 @@ public final class NettyFactory
             ChannelPipeline pipeline = channel.pipeline();
 
             // order of handlers: ssl -> logger -> handshakeHandler
-            if (encryptionOptions != null)
+            if (encryptionOptions.enabled)
             {
-                SslContext sslContext = SSLFactory.getSslContext(encryptionOptions, true, true);
-                SslHandler sslHandler = sslContext.newHandler(channel.alloc());
-                logger.debug("creating inbound netty SslContext: context={}, engine={}", sslContext.getClass().getName(), sslHandler.engine().getClass().getName());
-                pipeline.addFirst(SSL_CHANNEL_HANDLER_NAME, sslHandler);            }
+                if (encryptionOptions.optional)
+                {
+                    pipeline.addFirst(OPTIONAL_SSL_CHANNEL_HANDLER_NAME, new OptionalSslHandler(encryptionOptions));
+                }
+                else
+                {
+                    SslContext sslContext = SSLFactory.getSslContext(encryptionOptions, true, true);
+                    SslHandler sslHandler = sslContext.newHandler(channel.alloc());
+                    pipeline.addFirst(SSL_CHANNEL_HANDLER_NAME, sslHandler);
+                }
+            }
 
             if (WIRETRACE)
                 pipeline.addLast("logger", new LoggingHandler(LogLevel.INFO));
@@ -205,6 +213,8 @@ public final class NettyFactory
             channel.pipeline().addLast(HANDSHAKE_HANDLER_CHANNEL_HANDLER_NAME, new InboundHandshakeHandler(authenticator));
         }
     }
+
+
 
     private static String encryptionLogStatement(ServerEncryptionOptions options)
     {

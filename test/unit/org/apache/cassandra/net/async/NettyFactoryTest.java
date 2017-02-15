@@ -26,6 +26,8 @@ import org.junit.Test;
 
 import org.apache.cassandra.auth.AllowAllInternodeAuthenticator;
 import org.apache.cassandra.config.DatabaseDescriptor;
+import org.apache.cassandra.config.EncryptionOptions;
+import org.apache.cassandra.config.EncryptionOptions.ServerEncryptionOptions;
 import org.apache.cassandra.config.EncryptionOptions.ServerEncryptionOptions.InternodeEncryption;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.net.async.NettyFactory.InboundInitializer;
@@ -33,6 +35,7 @@ import org.apache.cassandra.net.async.NettyFactory.InboundInitializer;
 public class NettyFactoryTest
 {
     private static final int receiveBufferSize = 1 << 16;
+    private static ServerEncryptionOptions serverEncryptionOptions = new ServerEncryptionOptions();
 
     @BeforeClass
     public static void before()
@@ -44,7 +47,7 @@ public class NettyFactoryTest
     public void createServerChannel_SecondAttemptToBind()
     {
         InetSocketAddress addr = new InetSocketAddress("127.0.0.1", 9876);
-        InboundInitializer inboundInitializer = new InboundInitializer(new AllowAllInternodeAuthenticator(), null);
+        InboundInitializer inboundInitializer = new InboundInitializer(new AllowAllInternodeAuthenticator(), serverEncryptionOptions);
         NettyFactory.createInboundChannel(addr, inboundInitializer, receiveBufferSize);
         NettyFactory.createInboundChannel(addr, inboundInitializer, receiveBufferSize);
     }
@@ -53,7 +56,7 @@ public class NettyFactoryTest
     public void createServerChannel_UnbindableAddress()
     {
         InetSocketAddress addr = new InetSocketAddress("1.1.1.1", 9876);
-        InboundInitializer inboundInitializer = new InboundInitializer(new AllowAllInternodeAuthenticator(), null);
+        InboundInitializer inboundInitializer = new InboundInitializer(new AllowAllInternodeAuthenticator(), serverEncryptionOptions);
         NettyFactory.createInboundChannel(addr, inboundInitializer, receiveBufferSize);
     }
 

@@ -1819,7 +1819,7 @@ public class DatabaseDescriptor
         return conf.server_encryption_options;
     }
 
-    public static EncryptionOptions.ClientEncryptionOptions getClientEncryptionOptions()
+    public static EncryptionOptions getClientEncryptionOptions()
     {
         return conf.client_encryption_options;
     }

@@ -927,6 +927,11 @@ dynamic_snitch_badness_threshold: 0.1
 # http://download.oracle.com/javase/6/docs/technotes/guides/security/jsse/JSSERefGuide.html#CreateKeystore
 #
 server_encryption_options:
+    # for allowing secure incoming connections
+    enabled: false
+    # If enabled and optional are both set to true, encrypted and unencrypted connections are handled on the storage_port
+    optional: false
+    # on outbound connections, determine which peers to connect to securely
     internode_encryption: none
     keystore: conf/.keystore
     keystore_password: cassandra

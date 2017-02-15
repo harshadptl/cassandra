@@ -123,7 +123,7 @@ public class StressSettings implements Serializable
                 if (client != null)
                     return client;
 
-                EncryptionOptions.ClientEncryptionOptions encOptions = transport.getEncryptionOptions();
+                EncryptionOptions encOptions = transport.getEncryptionOptions();
                 JavaDriverClient c = new JavaDriverClient(this, currentNode, port.nativePort, encOptions);
                 c.connect(mode.compression());
                 if (setKeyspace)
