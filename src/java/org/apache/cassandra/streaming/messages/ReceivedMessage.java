@@ -42,7 +42,7 @@ public class ReceivedMessage extends StreamMessage
         public ReceivedMessage deserialize(DataInputPlus in, int version) throws IOException
         {
             Pair<UUID, Integer> header = StreamMessage.deserialize(in, version);
-            return new ReceivedMessage(TableId.deserialize(in), header.right, header.left, in.readInt());
+            return new ReceivedMessage(header.left, header.right, TableId.deserialize(in), in.readInt());
         }
 
         public long serializedSize(ReceivedMessage receivedMessage, int version)
@@ -57,7 +57,7 @@ public class ReceivedMessage extends StreamMessage
     public final TableId tableId;
     public final int sequenceNumber;
 
-    public ReceivedMessage(TableId tableId, int sequenceNumber, UUID planId, int sessionIndex)
+    public ReceivedMessage(UUID planId, int sessionIndex, TableId tableId, int sequenceNumber)
     {
         super(planId, sessionIndex);
         this.tableId = tableId;

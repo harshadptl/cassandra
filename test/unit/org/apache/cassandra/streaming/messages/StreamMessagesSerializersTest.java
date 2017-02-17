@@ -92,7 +92,7 @@ public class StreamMessagesSerializersTest
     @Test
     public void receivedMessage() throws IOException
     {
-        serializeRoundTrip(new ReceivedMessage(metadata.id, 42, UUID.randomUUID(), 23235), ReceivedMessage.serializer);
+        serializeRoundTrip(new ReceivedMessage(UUID.randomUUID(), 42, metadata.id, 7), ReceivedMessage.serializer);
     }
 
     @Test

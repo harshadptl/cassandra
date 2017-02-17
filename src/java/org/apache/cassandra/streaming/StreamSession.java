@@ -631,7 +631,7 @@ public class StreamSession implements IEndpointStateChangeSubscriber
         StreamingMetrics.totalIncomingBytes.inc(headerSize);
         metrics.incomingBytes.inc(headerSize);
         // send back file received message
-        messageSender.sendMessage(new ReceivedMessage(message.tableId, message.sequenceNumber, message.planId, message.sessionIndex));
+        messageSender.sendMessage(new ReceivedMessage(message.planId, message.sessionIndex, message.tableId, message.sequenceNumber));
         receivers.get(message.tableId).received(sstable);
     }
 
